@@ -1,3 +1,6 @@
+# Camera Plugin (Modified to Return Picture data)
+This repo forked from https://github.com/flutter/plugins/tree/master/packages/camera to add returning picture data functionality.
+
 # Camera Plugin
 
 [![pub package](https://img.shields.io/pub/v/camera.svg)](https://pub.dartlang.org/packages/camera)

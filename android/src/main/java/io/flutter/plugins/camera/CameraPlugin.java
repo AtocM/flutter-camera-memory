@@ -559,27 +559,16 @@ public class CameraPlugin implements MethodCallHandler {
     }
 
     private void takePicture(String filePath, @NonNull final Result result) {
-      final File file = new File(filePath);
-
-      if (file.exists()) {
-        result.error(
-            "fileExists",
-            "File at path '" + filePath + "' already exists. Cannot overwrite.",
-            null);
-        return;
-      }
 
       pictureImageReader.setOnImageAvailableListener(
           new ImageReader.OnImageAvailableListener() {
             @Override
             public void onImageAvailable(ImageReader reader) {
-              try (Image image = reader.acquireLatestImage()) {
-                ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                writeToFile(buffer, file);
-                result.success(null);
-              } catch (IOException e) {
-                result.error("IOError", "Failed saving image", null);
-              }
+              Image image = reader.acquireLatestImage();
+              ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+              byte[] arr = new byte[buffer.remaining()];
+              buffer.get(arr);
+              result.success(arr);
             }
           },
           null);

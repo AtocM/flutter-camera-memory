@@ -228,13 +228,12 @@ public class Camera {
     pictureImageReader.setOnImageAvailableListener(
         reader -> {
           try (Image image = reader.acquireLatestImage()) {
-            Image image = reader.acquireLatestImage();
             ByteBuffer buffer = image.getPlanes()[0].getBuffer();
             byte[] arr = new byte[buffer.remaining()];
             buffer.get(arr);
             result.success(arr);
-          } catch (IOException e) {
-            pictureCaptureRequest.error("IOError", "Failed saving image", null);
+          } catch (Exception e) {
+            pictureCaptureRequest.error("Exception", "Failed saving image", null);
           }
         },
         null);

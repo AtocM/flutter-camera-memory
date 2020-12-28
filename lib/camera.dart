@@ -13,15 +13,56 @@ part 'camera_image.dart';
 
 final MethodChannel _channel = const MethodChannel('plugins.flutter.io/camera');
 
-enum CameraLensDirection { front, back, external }
+/// The direction the camera is facing.
+enum CameraLensDirection {
+  /// Front facing camera (a user looking at the screen is seen by the camera).
+  front,
 
-enum ResolutionPreset { low, medium, high }
+  /// Back facing camera (a user looking at the screen is not seen by the camera).
+  back,
 
+  /// External camera which may not be mounted to the device.
+  external,
+}
+
+/// Affect the quality of video recording and image capture:
+///
+/// If a preset is not available on the camera being used a preset of lower quality will be selected automatically.
+enum ResolutionPreset {
+  /// 352x288 on iOS, 240p (320x240) on Android
+  low,
+
+  /// 480p (640x480 on iOS, 720x480 on Android)
+  medium,
+
+  /// 720p (1280x720)
+  high,
+
+  /// 1080p (1920x1080)
+  veryHigh,
+
+  /// 2160p (3840x2160)
+  ultraHigh,
+
+  /// The highest resolution available.
+  max,
+}
+
+/// Signature for a callback receiving the a camera image.
+///
+/// This is used by [CameraController.startImageStream].
+// ignore: inference_failure_on_function_return_type
 typedef onLatestImageAvailable = Function(CameraImage image);
 
 /// Returns the resolution preset as a String.
 String serializeResolutionPreset(ResolutionPreset resolutionPreset) {
   switch (resolutionPreset) {
+    case ResolutionPreset.max:
+      return 'max';
+    case ResolutionPreset.ultraHigh:
+      return 'ultraHigh';
+    case ResolutionPreset.veryHigh:
+      return 'veryHigh';
     case ResolutionPreset.high:
       return 'high';
     case ResolutionPreset.medium:
@@ -63,10 +104,15 @@ Future<List<CameraDescription>> availableCameras() async {
   }
 }
 
+/// Properties of a camera device.
 class CameraDescription {
+  /// Creates a new camera description with the given properties.
   CameraDescription({this.name, this.lensDirection, this.sensorOrientation});
 
+  /// The name of the camera device.
   final String name;
+
+  /// The direction the camera is facing.
   final CameraLensDirection lensDirection;
 
   /// Clockwise angle through which the output image needs to be rotated to be upright on the device screen in its native orientation.
@@ -98,19 +144,27 @@ class CameraDescription {
 
 /// This is thrown when the plugin reports an error.
 class CameraException implements Exception {
+  /// Creates a new camera exception with the given error code and description.
   CameraException(this.code, this.description);
 
+  /// Error code.
+  // TODO(bparrishMines): Document possible error codes.
+  // https://github.com/flutter/flutter/issues/69298
   String code;
+
+  /// Textual description of the error.
   String description;
 
   @override
   String toString() => '$runtimeType($code, $description)';
 }
 
-// Build the UI texture view of the video data with textureId.
+/// A widget showing a live camera preview.
 class CameraPreview extends StatelessWidget {
+  /// Creates a preview widget for the given camera controller.
   const CameraPreview(this.controller);
 
+  /// The controller for the camera that the preview is shown for.
   final CameraController controller;
 
   @override
@@ -123,6 +177,7 @@ class CameraPreview extends StatelessWidget {
 
 /// The state of a [CameraController].
 class CameraValue {
+  /// Creates a new camera controller state.
   const CameraValue({
     this.isInitialized,
     this.errorDescription,
@@ -130,14 +185,18 @@ class CameraValue {
     this.isRecordingVideo,
     this.isTakingPicture,
     this.isStreamingImages,
-  });
+    bool isRecordingPaused,
+  }) : _isRecordingPaused = isRecordingPaused;
 
+  /// Creates a new camera controller state for an uninitialzed controller.
   const CameraValue.uninitialized()
       : this(
-            isInitialized: false,
-            isRecordingVideo: false,
-            isTakingPicture: false,
-            isStreamingImages: false);
+          isInitialized: false,
+          isRecordingVideo: false,
+          isTakingPicture: false,
+          isStreamingImages: false,
+          isRecordingPaused: false,
+        );
 
   /// True after [CameraController.initialize] has completed successfully.
   final bool isInitialized;
@@ -151,6 +210,15 @@ class CameraValue {
   /// True when images from the camera are being streamed.
   final bool isStreamingImages;
 
+  final bool _isRecordingPaused;
+
+  /// True when camera [isRecordingVideo] and recording is paused.
+  bool get isRecordingPaused => isRecordingVideo && _isRecordingPaused;
+
+  /// Description of an error state.
+  ///
+  /// This is null while the controller is not in an error state.
+  /// When [hasError] is true this contains the error description.
   final String errorDescription;
 
   /// The size of the preview in pixels.
@@ -163,8 +231,15 @@ class CameraValue {
   /// Can only be called when [initialize] is done.
   double get aspectRatio => previewSize.height / previewSize.width;
 
+  /// Whether the controller is in an error state.
+  ///
+  /// When true [errorDescription] describes the error.
   bool get hasError => errorDescription != null;
 
+  /// Creates a modified copy of the object.
+  ///
+  /// Explicitly specified fields get the specified value, all other fields get
+  /// the same value of the current object.
   CameraValue copyWith({
     bool isInitialized,
     bool isRecordingVideo,
@@ -172,6 +247,7 @@ class CameraValue {
     bool isStreamingImages,
     String errorDescription,
     Size previewSize,
+    bool isRecordingPaused,
   }) {
     return CameraValue(
       isInitialized: isInitialized ?? this.isInitialized,
@@ -180,6 +256,7 @@ class CameraValue {
       isRecordingVideo: isRecordingVideo ?? this.isRecordingVideo,
       isTakingPicture: isTakingPicture ?? this.isTakingPicture,
       isStreamingImages: isStreamingImages ?? this.isStreamingImages,
+      isRecordingPaused: isRecordingPaused ?? _isRecordingPaused,
     );
   }
 
@@ -203,13 +280,22 @@ class CameraValue {
 ///
 /// To show the camera preview on the screen use a [CameraPreview] widget.
 class CameraController extends ValueNotifier<CameraValue> {
+  /// Creates a new camera controller in an uninitialized state.
   CameraController(
     this.description,
     this.resolutionPreset, {
     this.enableAudio = true,
   }) : super(const CameraValue.uninitialized());
 
+  /// The properties of the camera device controlled by this controller.
   final CameraDescription description;
+
+  /// The resolution this controller is targeting.
+  ///
+  /// This resolution preset is not guaranteed to be available on the device,
+  /// if unavailable a lower resolution will be used.
+  ///
+  /// See also: [ResolutionPreset].
   final ResolutionPreset resolutionPreset;
 
   /// Whether to include audio when recording a video.
@@ -220,6 +306,13 @@ class CameraController extends ValueNotifier<CameraValue> {
   StreamSubscription<dynamic> _eventSubscription;
   StreamSubscription<dynamic> _imageStreamSubscription;
   Completer<void> _creatingCompleter;
+
+  /// Checks whether [CameraController.dispose] has completed successfully.
+  ///
+  /// This is a no-op when asserts are disabled.
+  void debugCheckIsDisposed() {
+    assert(_isDisposed);
+  }
 
   /// Initializes the camera on the device.
   ///
@@ -408,7 +501,7 @@ class CameraController extends ValueNotifier<CameraValue> {
       throw CameraException(e.code, e.message);
     }
 
-    _imageStreamSubscription.cancel();
+    await _imageStreamSubscription.cancel();
     _imageStreamSubscription = null;
   }
 
@@ -447,7 +540,7 @@ class CameraController extends ValueNotifier<CameraValue> {
         'startVideoRecording',
         <String, dynamic>{'textureId': _textureId, 'filePath': filePath},
       );
-      value = value.copyWith(isRecordingVideo: true);
+      value = value.copyWith(isRecordingVideo: true, isRecordingPaused: false);
     } on PlatformException catch (e) {
       throw CameraException(e.code, e.message);
     }
@@ -471,6 +564,60 @@ class CameraController extends ValueNotifier<CameraValue> {
       value = value.copyWith(isRecordingVideo: false);
       await _channel.invokeMethod<void>(
         'stopVideoRecording',
+        <String, dynamic>{'textureId': _textureId},
+      );
+    } on PlatformException catch (e) {
+      throw CameraException(e.code, e.message);
+    }
+  }
+
+  /// Pause video recording.
+  ///
+  /// This feature is only available on iOS and Android sdk 24+.
+  Future<void> pauseVideoRecording() async {
+    if (!value.isInitialized || _isDisposed) {
+      throw CameraException(
+        'Uninitialized CameraController',
+        'pauseVideoRecording was called on uninitialized CameraController',
+      );
+    }
+    if (!value.isRecordingVideo) {
+      throw CameraException(
+        'No video is recording',
+        'pauseVideoRecording was called when no video is recording.',
+      );
+    }
+    try {
+      value = value.copyWith(isRecordingPaused: true);
+      await _channel.invokeMethod<void>(
+        'pauseVideoRecording',
+        <String, dynamic>{'textureId': _textureId},
+      );
+    } on PlatformException catch (e) {
+      throw CameraException(e.code, e.message);
+    }
+  }
+
+  /// Resume video recording after pausing.
+  ///
+  /// This feature is only available on iOS and Android sdk 24+.
+  Future<void> resumeVideoRecording() async {
+    if (!value.isInitialized || _isDisposed) {
+      throw CameraException(
+        'Uninitialized CameraController',
+        'resumeVideoRecording was called on uninitialized CameraController',
+      );
+    }
+    if (!value.isRecordingVideo) {
+      throw CameraException(
+        'No video is recording',
+        'resumeVideoRecording was called when no video is recording.',
+      );
+    }
+    try {
+      value = value.copyWith(isRecordingPaused: false);
+      await _channel.invokeMethod<void>(
+        'resumeVideoRecording',
         <String, dynamic>{'textureId': _textureId},
       );
     } on PlatformException catch (e) {

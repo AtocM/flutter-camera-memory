@@ -7,6 +7,8 @@ This repo forked from https://github.com/flutter/plugins/tree/master/packages/ca
 
 A Flutter plugin for iOS and Android allowing access to the device cameras.
 
+*Note*: This plugin is still under development, and some APIs might not be available yet. We are working on a refactor which can be followed here: [issue](https://github.com/flutter/flutter/issues/31225)
+
 ## Features:
 
 * Display live camera preview in a widget.
@@ -42,6 +44,29 @@ Change the minimum Android sdk version to 21 (or higher) in your `android/app/bu
 minSdkVersion 21
 ```
 
+It's important to note that the `MediaRecorder` class is not working properly on emulators, as stated in the documentation: https://developer.android.com/reference/android/media/MediaRecorder. Specifically, when recording a video with sound enabled and trying to play it back, the duration won't be correct and you will only see the first frame.
+
+### Handling Lifecycle states
+
+As of version [0.5.0](https://github.com/flutter/plugins/blob/master/packages/camera/CHANGELOG.md#050) of the camera plugin, lifecycle changes are no longer handled by the plugin. This means developers are now responsible to control camera resources when the lifecycle state is updated. Failure to do so might lead to unexpected behavior (for example as described in issue [#39109](https://github.com/flutter/flutter/issues/39109)). Handling lifecycle changes can be done by overriding the `didChangeAppLifecycleState` method like so:
+
+```dart
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App state changed before we got the chance to initialize.
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    if (state == AppLifecycleState.inactive) {
+      controller?.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      if (controller != null) {
+        onNewCameraSelected(controller.description);
+      }
+    }
+  }
+```
+
 ### Example
 
 Here is a small example flutter app displaying a full screen camera preview.
@@ -54,6 +79,7 @@ import 'package:camera/camera.dart';
 List<CameraDescription> cameras;
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   cameras = await availableCameras();
   runApp(CameraApp());
 }
